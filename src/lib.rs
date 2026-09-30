@@ -50,6 +50,45 @@ pub fn kucult(metin: &str) -> String {
     cikti
 }
 
+/// Türkçe yazım kuralıyla küçük harf: 'I' → 'ı', 'İ' → 'i'; işaret korunur.
+/// Metnin Türkçe olduğu BİLİNİYORSA (künye, tez metni). Dil bilinmiyorsa
+/// `kucult` ("API" → "apı" olmasın). NFC'ye getirir.
+pub fn tr_kucuk(metin: &str) -> String {
+    let mut cikti = String::with_capacity(metin.len());
+    for c in metin.nfc() {
+        match c {
+            'İ' => cikti.push('i'),
+            'I' => cikti.push('ı'),
+            _ => cikti.extend(c.to_lowercase()),
+        }
+    }
+    cikti
+}
+
+/// Türkçe yazım kuralıyla büyük harf: 'i' → 'İ', 'ı' → 'I'. `to_uppercase`
+/// "çiçek"i "ÇIÇEK" yapar; bu "ÇİÇEK". NFC'ye getirir.
+pub fn tr_buyuk(metin: &str) -> String {
+    let mut cikti = String::with_capacity(metin.len());
+    for c in metin.nfc() {
+        match c {
+            'i' => cikti.push('İ'),
+            'ı' => cikti.push('I'),
+            _ => cikti.extend(c.to_uppercase()),
+        }
+    }
+    cikti
+}
+
+/// Yalnız ilk harfi Türkçe kuralla büyütür, gerisine dokunmaz ("istanbul" →
+/// "İstanbul"). Başlık düzeni kuran kod her sözcüğe bunu uygular.
+pub fn tr_bas_buyuk(kelime: &str) -> String {
+    let mut harfler = kelime.chars();
+    match harfler.next() {
+        Some(ilk) => tr_buyuk(&ilk.to_string()) + harfler.as_str(),
+        None => String::new(),
+    }
+}
+
 /// Katlanmış metni belirteçlere böler. Harf/rakam dışındaki her şey ayraçtır
 /// (ASCII dışı noktalama dahil: `—`, `’`, `“`).
 pub fn belirtecle(metin: &str) -> Vec<String> {
@@ -103,6 +142,20 @@ mod testler {
     }
 
     #[test]
+    fn turkce_yazim_kurali() {
+        assert_eq!(tr_kucuk("IŞIK İSTANBUL Çiçek"), "ışık istanbul çiçek");
+        assert_eq!(tr_buyuk("çiçek ılık"), "ÇİÇEK ILIK");
+        // zopay pdf_tara: to_lowercase "AÇIKÖĞRETİM"i "açiköğreti̇m" yapıp künyeyi kaçırıyordu.
+        assert_eq!(tr_kucuk("AÇIKÖĞRETİM HAZIRLAMA"), "açıköğretim hazırlama");
+        assert_eq!(tr_bas_buyuk("istanbul"), "İstanbul");
+        assert_eq!(tr_bas_buyuk("ırmak"), "Irmak");
+        assert_eq!(tr_bas_buyuk(""), "");
+        // Ayrışık yazılmış İ (I + U+0307) de 'i' olur, "ı̇" değil.
+        assert_eq!(tr_kucuk("I\u{307}stanbul"), "istanbul");
+        assert_eq!(tr_kucuk(&tr_buyuk("çiçekçi ılık")), "çiçekçi ılık");
+    }
+
+    #[test]
     fn katla_kucultun_ustundedir() {
         for x in [
             "İSTANBUL ışık ÇĞÖŞÜ",
@@ -112,6 +165,7 @@ mod testler {
             "كِتَاب",
         ] {
             assert_eq!(katla(x), katla(&kucult(x)), "{x}");
+            assert_eq!(katla(x), katla(&tr_kucuk(x)), "{x}");
         }
     }
 
