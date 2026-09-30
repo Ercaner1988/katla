@@ -32,6 +32,24 @@ pub fn katla(metin: &str) -> String {
     cikti
 }
 
+/// Görüntülenecek/saklanacak metin için küçük harf: işaretler KORUNUR (ş, ç, â),
+/// yalnız büyük/küçük harf birleşir. Arama için değil, onun için `katla`.
+///
+/// `to_lowercase` 'İ'den "i̇" (i + U+0307) üretir; burada 'İ' → 'i'. Dil
+/// bilinmediği için 'I' de 'i' olur (İngilizce kısaltmalar: "API" → "api");
+/// 'ı' olduğu gibi kalır. NFC'ye getirir: ayrışık ve birleşik yazım aynı çıkar.
+/// Yasa: `katla(x) == katla(&kucult(x))` — arama katlaması bunun üstündedir.
+pub fn kucult(metin: &str) -> String {
+    let mut cikti = String::with_capacity(metin.len());
+    for c in metin.nfc() {
+        match c {
+            'İ' | 'I' => cikti.push('i'),
+            _ => cikti.extend(c.to_lowercase()),
+        }
+    }
+    cikti
+}
+
 /// Katlanmış metni belirteçlere böler. Harf/rakam dışındaki her şey ayraçtır
 /// (ASCII dışı noktalama dahil: `—`, `’`, `“`).
 pub fn belirtecle(metin: &str) -> Vec<String> {
@@ -73,6 +91,28 @@ mod testler {
             belirtecle("kaynak—bak “alıntı”"),
             vec!["kaynak", "bak", "alinti"]
         );
+    }
+
+    #[test]
+    fn kucult_isareti_korur_i_artigi_birakmaz() {
+        assert_eq!(kucult("İSTANBUL Şehir"), "istanbul şehir");
+        assert_eq!(kucult("API ılık"), "api ılık");
+        // Ayrışık yazılmış ş birleşik çıkar.
+        assert_eq!(kucult("s\u{327}ehir"), "şehir");
+        assert!(!kucult("İ").contains('\u{307}'));
+    }
+
+    #[test]
+    fn katla_kucultun_ustundedir() {
+        for x in [
+            "İSTANBUL ışık ÇĞÖŞÜ",
+            "Kitâbü'l-Fihrist",
+            "IŞIK",
+            "ka\u{302}tip",
+            "كِتَاب",
+        ] {
+            assert_eq!(katla(x), katla(&kucult(x)), "{x}");
+        }
     }
 
     #[test]
