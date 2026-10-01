@@ -16,6 +16,10 @@
 use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
 
+/// U+0307 (üstte nokta). Çıplak `to_lowercase` 'İ'den "i" + bunu üretir; böyle
+/// bozulmuş metinde i'nin ardındaki nokta fazladır, atılır.
+const NOKTA: char = '\u{307}';
+
 /// Metni arama biçimine katlar: küçük harf, aksansız, Türkçe İ/ı birleşik.
 pub fn katla(metin: &str) -> String {
     let mut cikti = String::with_capacity(metin.len());
@@ -44,6 +48,7 @@ pub fn kucult(metin: &str) -> String {
     for c in metin.nfc() {
         match c {
             'İ' | 'I' => cikti.push('i'),
+            NOKTA if cikti.ends_with('i') => {}
             _ => cikti.extend(c.to_lowercase()),
         }
     }
@@ -59,6 +64,7 @@ pub fn tr_kucuk(metin: &str) -> String {
         match c {
             'İ' => cikti.push('i'),
             'I' => cikti.push('ı'),
+            NOKTA if cikti.ends_with('i') => {}
             _ => cikti.extend(c.to_lowercase()),
         }
     }
@@ -73,6 +79,7 @@ pub fn tr_buyuk(metin: &str) -> String {
         match c {
             'i' => cikti.push('İ'),
             'ı' => cikti.push('I'),
+            NOKTA if cikti.ends_with('İ') => {}
             _ => cikti.extend(c.to_uppercase()),
         }
     }
@@ -153,6 +160,18 @@ mod testler {
         // Ayrışık yazılmış İ (I + U+0307) de 'i' olur, "ı̇" değil.
         assert_eq!(tr_kucuk("I\u{307}stanbul"), "istanbul");
         assert_eq!(tr_kucuk(&tr_buyuk("çiçekçi ılık")), "çiçekçi ılık");
+    }
+
+    #[test]
+    fn to_lowercase_artigi_onarilir() {
+        // "İstanbul".to_lowercase() == "i\u{307}stanbul": nokta i'de kalmamalı.
+        let bozuk = "İstanbul".to_lowercase();
+        assert_eq!(kucult(&bozuk), "istanbul");
+        assert_eq!(tr_kucuk(&bozuk), "istanbul");
+        assert_eq!(tr_buyuk(&bozuk), "İSTANBUL");
+        assert_eq!(katla(&bozuk), "istanbul");
+        // Yasa bozuk girdide de tutar.
+        assert_eq!(katla(&bozuk), katla(&kucult(&bozuk)));
     }
 
     #[test]

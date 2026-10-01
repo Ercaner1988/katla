@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+# Komutlar bilerek sade: altin-kapi (`kapi`) bu dosyadaki `run: cargo …`
+# satirlarini okuyup yerelde aynen calistirir. Buraya bir kontrol eklemek,
+# yerel kapiya da eklemek demektir.
+#
+# katla ortak Turkce katlamadir: el-Fihrist, pasli, zopay, kervan, graphify-rs
+# ona bagli. Uc isletim sisteminde de ayni sonucu vermeli.
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test

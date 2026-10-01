@@ -1,0 +1,29 @@
+# katla'nın altin-kapi beyanı. Değer: "uygulanir" ya da "uygulanmaz".
+# Anahtarlar altin-kapi CONTEXT.md'deki on altı boyuttur.
+#
+# katla ortak Türkçe katlama kitaplığıdır (ADR 0002): el-Fihrist, pasli, zopay,
+# kervan, graphify-rs ona bağlı. Burada kırılan her şey hepsinde kırılır.
+
+# Taban çizgilerindeki ad: klasör adı klonlayana göre değişir, bu değişmez.
+repo = "katla"
+
+[boyut]
+arkayuz = "uygulanmaz"                 # kitaplık; sunucu yok
+onyuz = "uygulanmaz"                   # arayüz yok
+veritabani = "uygulanmaz"              # veri tutmaz
+makine_zararsizligi = "uygulanmaz"     # saf işlev; dosya, ağ, süreç yok
+tedarik_guvenligi = "uygulanir"        # tek bağımlılık: unicode-normalization
+bellek_guvenligi = "uygulanir"         # unsafe yok; öyle kalmalı
+kimlik_yolu = "uygulanmaz"             # kimlik doğrulama yok
+yayina_hazirlik = "uygulanir"          # bağımlılar git+rev ile sabitler
+kaynak_tuketimi = "uygulanir"          # her arama sorgusu ve dizin girdisi buradan geçer
+birlikte_calisabilirlik = "uygulanir"  # katla(x) == katla(kucult(x)) yasası bağımlılar arası sözleşme
+karakter_yazimi = "uygulanir"
+hata_disiplini = "uygulanir"
+test_gercekciligi = "uygulanir"
+veri_dayanikliligi = "uygulanmaz"      # kalıcı veri yok
+surum_izi = "uygulanir"
+belge_dogrulugu = "uygulanir"
+
+[karakter.muaf]
+"src/lib.rs" = "Katlamanın kendisi: her işlev İ/I/ı/i'yi elle çevirir, std `to_lowercase`/`to_uppercase` yalnız geri kalan harflere iner; sınamaları var"
