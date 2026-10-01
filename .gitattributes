@@ -1,0 +1,2 @@
+# Depoda LF; .githooks/pre-push CRLF ile cikarsa sh "#!/bin/sh" der ve kosmaz.
+* text=auto eol=lf
