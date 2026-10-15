@@ -1,9 +1,12 @@
 [package]
 name = "katla"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 license = "MIT"
 description = "Türkçe katlama: aramada iki metni aynı biçime getirir (İ/I/ı, şapka, aksan, ayrışık yazım)."
 
 [dependencies]
 unicode-normalization = "0.1"
+
+[dev-dependencies]
+proptest = "1"

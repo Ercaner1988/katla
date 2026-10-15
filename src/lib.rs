@@ -13,16 +13,19 @@
 //!
 //! ponytail: aramaya yönelik, geri dönüşsüz. Görüntülenecek metin için DEĞİL.
 
-use unicode_normalization::char::is_combining_mark;
 use unicode_normalization::UnicodeNormalization;
+use unicode_normalization::char::is_combining_mark;
 
 /// U+0307 (üstte nokta). Çıplak `to_lowercase` 'İ'den "i" + bunu üretir; böyle
 /// bozulmuş metinde i'nin ardındaki nokta fazladır, atılır.
 const NOKTA: char = '\u{307}';
 
-/// Metni arama biçimine katlar: küçük harf, aksansız, Türkçe İ/ı birleşik.
-pub fn katla(metin: &str) -> String {
-    let mut cikti = String::with_capacity(metin.len());
+/// Metni arama biçimine katlayıp verilen tampona yazar: küçük harf, aksansız, Türkçe İ/ı birleşik.
+/// Tamponu temizler (`clear`) ve gerekiyorsa kapasite ayırır.
+#[inline]
+pub fn katla_tampona(metin: &str, cikti: &mut String) {
+    cikti.clear();
+    cikti.reserve(metin.len());
     for c in metin.nfd() {
         if is_combining_mark(c) {
             continue;
@@ -33,6 +36,13 @@ pub fn katla(metin: &str) -> String {
             _ => cikti.extend(c.to_lowercase()),
         }
     }
+}
+
+/// Metni arama biçimine katlar: küçük harf, aksansız, Türkçe İ/ı birleşik.
+#[inline]
+pub fn katla(metin: &str) -> String {
+    let mut cikti = String::with_capacity(metin.len());
+    katla_tampona(metin, &mut cikti);
     cikti
 }
 
@@ -91,19 +101,33 @@ pub fn tr_buyuk(metin: &str) -> String {
 pub fn tr_bas_buyuk(kelime: &str) -> String {
     let mut harfler = kelime.chars();
     match harfler.next() {
-        Some(ilk) => tr_buyuk(&ilk.to_string()) + harfler.as_str(),
+        Some(ilk) => {
+            let mut cikti = String::with_capacity(kelime.len() + 2);
+            match ilk {
+                'i' => cikti.push('İ'),
+                'ı' => cikti.push('I'),
+                _ => cikti.extend(ilk.to_uppercase()),
+            }
+            cikti.push_str(harfler.as_str());
+            cikti
+        }
         None => String::new(),
     }
+}
+
+/// Sıfır-tahsisli belirteç yineleyicisi. Harf/rakam dışındaki her karakteri ayraç sayar.
+#[inline]
+pub fn belirtecler(metin: &str) -> impl Iterator<Item = &str> {
+    metin
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|s| !s.is_empty())
 }
 
 /// Katlanmış metni belirteçlere böler. Harf/rakam dışındaki her şey ayraçtır
 /// (ASCII dışı noktalama dahil: `—`, `’`, `“`).
 pub fn belirtecle(metin: &str) -> Vec<String> {
-    katla(metin)
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .collect()
+    let katlanmis = katla(metin);
+    belirtecler(&katlanmis).map(str::to_string).collect()
 }
 
 #[cfg(test)]
@@ -192,5 +216,36 @@ mod testler {
     fn arapca_harf_korunur() {
         // Arapça harfler aksan değil, harftir; yalnız hareke (birleşik) atılır.
         assert_eq!(belirtecle("كِتَاب"), vec!["كتاب"]);
+    }
+
+    #[test]
+    fn katla_tampona_ve_belirtecler_sifir_tahsis_dogru() {
+        let mut buf = String::new();
+        katla_tampona("İstanbul Işık", &mut buf);
+        assert_eq!(buf, "istanbul isik");
+        let tokens: Vec<&str> = belirtecler(&buf).collect();
+        assert_eq!(tokens, vec!["istanbul", "isik"]);
+    }
+}
+
+#[cfg(test)]
+mod proptest_testleri {
+    use super::*;
+    use proptest::prelude::*;
+
+    proptest! {
+        #[test]
+        fn katla_idempotenttir(s in "\\PC*") {
+            let k1 = katla(&s);
+            let k2 = katla(&k1);
+            prop_assert_eq!(k1, k2);
+        }
+
+        #[test]
+        fn katla_tampona_esittir_katla(s in "\\PC*") {
+            let mut buf = String::new();
+            katla_tampona(&s, &mut buf);
+            prop_assert_eq!(katla(&s), buf);
+        }
     }
 }
