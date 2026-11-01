@@ -11,9 +11,16 @@
 //! birleşik yazım aynı sonucu verir. Rust'ın `to_lowercase`'i dile duyarsızdır
 //! ('İ' → "i̇"), o yüzden İ/I önce elle çevrilir.
 //!
-//! Ayrıca ayn ʿ, hemze ʾ ve kardeşleri (U+02B9..U+02BF) SİLİNİR: harf (Lm)
-//! sayıldıkları için birleşik işaret kuralından kaçıyorlardı ("ʿasabiyya" ≠
-//! "asabiyya"). Ayraç değil, silme: "shariʿa" → "sharia", tek belirteç.
+//! Ayrıca ayn ʿ, hemze ʾ ve kardeşleri (U+02B9..U+02C1, U+A78B/U+A78C) SİLİNİR:
+//! harf (Lm) sayıldıkları için birleşik işaret kuralından kaçıyorlardı
+//! ("ʿasabiyya" ≠ "asabiyya"). Ayraç değil, silme: "shariʿa" → "sharia", tek belirteç.
+//!
+//! BİLİNEN SINIR: ‘ (U+2018), ’ (U+2019), U+0060 (eğik vurgu) ve ASCII kesme
+//! ayraç KALIR; "shari‘a" iki belirteç verir (`["shari", "a"]`) ve bu beklenen
+//! davranıştır. Türkçede kesme ek ayırıcıdır ("Weber’in" → weber, in); silinseydi
+//! "weberin" olur, ek ayrımı bozulurdu. Yani ayn/hemze yalnız değiştirici harfle
+//! (ʿ ʾ …) yazılmışsa yazılıştan bağımsız bulunur; kesme işaretiyle yazılmışsa değil.
+//!
 //! Katlama çıktısı değişince [`KATLAMA_SURUMU`] artar (diske katlanmış belirteç
 //! yazan bağımlılar dizin başlığında karşılaştırır).
 //!
@@ -26,23 +33,23 @@ use unicode_normalization::char::is_combining_mark;
 /// FTS tablosu, önbellek) bunu dizin başlığına yazar; sabit değişmişse dizini
 /// yeniden kurar: yoksa sorgu yeni, kayıt eski katlamayla kalır ve eşleşmez.
 /// Katlama çıktısını değiştiren her düzeltmede artırılır.
-/// 1: ilk sürüm (NFD, birleşik işaret at, İ/I/ı). 2: U+02B9..U+02BF silinir.
+/// 1: ilk sürüm (NFD, birleşik işaret at, İ/I/ı). 2: değiştirici harfler (ʿ ʾ …, U+02B9..U+02C1, U+A78B/C) silinir.
 pub const KATLAMA_SURUMU: u32 = 2;
 
 /// U+0307 (üstte nokta). Çıplak `to_lowercase` 'İ'den "i" + bunu üretir; böyle
 /// bozulmuş metinde i'nin ardındaki nokta fazladır, atılır.
 const NOKTA: char = '\u{307}';
 
-/// Katlamanın SİLDİĞİ değiştirici harfler (U+02B9..U+02BF): ayn ʿ (U+02BF),
-/// hemze ʾ (U+02BE), ʽ (U+02BD), ʼ (U+02BC), ʻ (U+02BB) ve prim ʹ ʺ
-/// (U+02B9/U+02BA, ALA-LC ayırma işareti). Unicode bunları birleşik işaret değil
-/// harf (Lm) sayar; silinmezse "ʿasabiyya" sözcüğün içinde kalır ve "asabiyya"
-/// ile eşleşmez. Ayraç YAPILMAZ (sözcük ikiye bölünmesin, "shariʿa" → "sharia");
-/// yalnız katlama çıktısı değişir, saklanan metin değişmez (katla yazmaz).
-/// ASCII kesme ' ve tipografik ’ ayraç olarak KALIR (mevcut davranış).
+/// Katlamanın SİLDİĞİ değiştirici harfler: U+02B9..U+02C1 (prim ʹ ʺ, ʻ ʼ ʽ,
+/// hemze ʾ, ayn ʿ, ˀ hemze, ˁ ayn) ile U+A78B/U+A78C (saltillo Ꞌ ꞌ; Ꞌ'nin küçüğü
+/// ꞌ olduğundan ikisi de). Unicode bunları birleşik işaret değil harf (Lm/Lu)
+/// sayar; silinmezse "ʿasabiyya" sözcüğün içinde kalır ve "asabiyya" ile eşleşmez.
+/// Ayraç YAPILMAZ (sözcük ikiye bölünmesin, "shariʿa" → "sharia"); yalnız katlama
+/// çıktısı değişir, saklanan metin değişmez (katla yazmaz). Tek küme bu işlevdedir.
+/// ASCII kesme, ‘ ve ’ ayraç olarak KALIR (bkz. modül belgesi, bilinen sınır).
 /// U+02C8 (IPA vurgu çizgisi) dahil değil: Arapça/Osmanlıca transliterasyonu kullanmaz.
 const fn atilir_mi(c: char) -> bool {
-    matches!(c, '\u{2B9}'..='\u{2BF}')
+    matches!(c, '\u{2B9}'..='\u{2C1}' | '\u{A78B}' | '\u{A78C}')
 }
 
 /// Metni arama biçimine katlayıp verilen tampona yazar: küçük harf, aksansız, Türkçe İ/ı birleşik.
@@ -258,20 +265,38 @@ mod testler {
             belirtecle("Kit\u{e2}b\u{fc}'l-\u{2bf}\u{130}ber"),
             vec!["kitabu", "l", "iber"]
         );
-        // Aranan ve kayıt aynı biçime düşer: yazılıştan bağımsız bulunur.
+        // Değiştirici harfle yazılmış ayn/hemze aynı biçime düşer. Kesme işaretiyle
+        // yazılmış biçim (‘ ’ ` ') bunun DIŞINDADIR (bkz. bilinen sınır sınaması).
         assert_eq!(katla("\u{2bf}Asabiyya"), katla("asabiyya"));
         assert_eq!(katla("\u{2bf}Asabiyya"), katla("\u{2be}asabiyya"));
     }
 
     #[test]
     fn yakin_degistirici_harfler_ve_sinir() {
-        for kod in 0x2b9u32..=0x2bf {
+        let silinenler = (0x2b9u32..=0x2c1).chain([0xa78b, 0xa78c]);
+        for kod in silinenler {
             let c = char::from_u32(kod).unwrap();
             assert_eq!(katla(&format!("a{c}b")), "ab", "U+{kod:04X}");
         }
-        // Sınır dışı komşular dokunulmaz: U+02B8 (ʸ, harf) ve U+02C8 (vurgu çizgisi).
-        assert_eq!(katla("a\u{2b8}b"), "a\u{2b8}b");
-        assert_eq!(katla("a\u{2c8}b"), "a\u{2c8}b");
+        assert_eq!(belirtecle("\u{2c1}asabiyya"), vec!["asabiyya"]);
+        assert_eq!(belirtecle("\u{2c0}ibn \u{a78c}umar"), vec!["ibn", "umar"]);
+        // Sınır dışı komşular dokunulmaz: U+02B8 (ʸ, harf), U+02C8 (vurgu çizgisi),
+        // U+A78A (Sk) ve U+A78D (Ɥ, harf).
+        for kod in [0x2b8u32, 0x2c8, 0xa78a, 0xa78d] {
+            let c = char::from_u32(kod).unwrap();
+            let beklenen: String = format!("a{c}b")
+                .chars()
+                .flat_map(char::to_lowercase)
+                .collect();
+            assert_eq!(katla(&format!("a{c}b")), beklenen, "U+{kod:04X}");
+        }
+        // Bilinen sınır: kesme işaretleri ayraç KALIR (Türkçe ek ayırıcısı: Weber’in).
+        // "shari‘a" iki belirteç verir; bu beklenen davranıştır, hata değil.
+        assert_eq!(belirtecle("shari\u{2018}a"), vec!["shari", "a"]);
+        assert_eq!(belirtecle("shari\u{2019}a"), vec!["shari", "a"]);
+        assert_eq!(belirtecle("shari`a"), vec!["shari", "a"]);
+        assert_eq!(belirtecle("shari'a"), vec!["shari", "a"]);
+        assert_eq!(belirtecle("Weber\u{2019}in"), vec!["weber", "in"]);
         // Tipografik kesme ayraç kalır (mevcut davranış).
         assert_eq!(belirtecle("kitab\u{2019}ul"), vec!["kitab", "ul"]);
         // Yalnız ʿ olan metin boş belirteç listesi verir, hata vermez.
