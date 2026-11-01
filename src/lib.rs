@@ -11,14 +11,39 @@
 //! birleşik yazım aynı sonucu verir. Rust'ın `to_lowercase`'i dile duyarsızdır
 //! ('İ' → "i̇"), o yüzden İ/I önce elle çevrilir.
 //!
+//! Ayrıca ayn ʿ, hemze ʾ ve kardeşleri (U+02B9..U+02BF) SİLİNİR: harf (Lm)
+//! sayıldıkları için birleşik işaret kuralından kaçıyorlardı ("ʿasabiyya" ≠
+//! "asabiyya"). Ayraç değil, silme: "shariʿa" → "sharia", tek belirteç.
+//! Katlama çıktısı değişince [`KATLAMA_SURUMU`] artar (diske katlanmış belirteç
+//! yazan bağımlılar dizin başlığında karşılaştırır).
+//!
 //! ponytail: aramaya yönelik, geri dönüşsüz. Görüntülenecek metin için DEĞİL.
 
 use unicode_normalization::UnicodeNormalization;
 use unicode_normalization::char::is_combining_mark;
 
+/// Katlama kuralının sürümü. Katlanmış belirteci diske yazan bağımlı (BM25 dizini,
+/// FTS tablosu, önbellek) bunu dizin başlığına yazar; sabit değişmişse dizini
+/// yeniden kurar: yoksa sorgu yeni, kayıt eski katlamayla kalır ve eşleşmez.
+/// Katlama çıktısını değiştiren her düzeltmede artırılır.
+/// 1: ilk sürüm (NFD, birleşik işaret at, İ/I/ı). 2: U+02B9..U+02BF silinir.
+pub const KATLAMA_SURUMU: u32 = 2;
+
 /// U+0307 (üstte nokta). Çıplak `to_lowercase` 'İ'den "i" + bunu üretir; böyle
 /// bozulmuş metinde i'nin ardındaki nokta fazladır, atılır.
 const NOKTA: char = '\u{307}';
+
+/// Katlamanın SİLDİĞİ değiştirici harfler (U+02B9..U+02BF): ayn ʿ (U+02BF),
+/// hemze ʾ (U+02BE), ʽ (U+02BD), ʼ (U+02BC), ʻ (U+02BB) ve prim ʹ ʺ
+/// (U+02B9/U+02BA, ALA-LC ayırma işareti). Unicode bunları birleşik işaret değil
+/// harf (Lm) sayar; silinmezse "ʿasabiyya" sözcüğün içinde kalır ve "asabiyya"
+/// ile eşleşmez. Ayraç YAPILMAZ (sözcük ikiye bölünmesin, "shariʿa" → "sharia");
+/// yalnız katlama çıktısı değişir, saklanan metin değişmez (katla yazmaz).
+/// ASCII kesme ' ve tipografik ’ ayraç olarak KALIR (mevcut davranış).
+/// U+02C8 (IPA vurgu çizgisi) dahil değil: Arapça/Osmanlıca transliterasyonu kullanmaz.
+const fn atilir_mi(c: char) -> bool {
+    matches!(c, '\u{2B9}'..='\u{2BF}')
+}
 
 /// Metni arama biçimine katlayıp verilen tampona yazar: küçük harf, aksansız, Türkçe İ/ı birleşik.
 /// Tamponu temizler (`clear`) ve gerekiyorsa kapasite ayırır.
@@ -27,7 +52,7 @@ pub fn katla_tampona(metin: &str, cikti: &mut String) {
     cikti.clear();
     cikti.reserve(metin.len());
     for c in metin.nfd() {
-        if is_combining_mark(c) {
+        if is_combining_mark(c) || atilir_mi(c) {
             continue;
         }
         match c {
@@ -216,6 +241,46 @@ mod testler {
     fn arapca_harf_korunur() {
         // Arapça harfler aksan değil, harftir; yalnız hareke (birleşik) atılır.
         assert_eq!(belirtecle("كِتَاب"), vec!["كتاب"]);
+    }
+
+    #[test]
+    fn ayn_ve_hemze_silinir_sozcuk_bolunmez() {
+        // Ayn U+02BF, hemze U+02BE, U+02BC, U+02BB: harf (Lm), birleşik işaret değil.
+        assert_eq!(belirtecle("\u{2bf}asabiyya"), vec!["asabiyya"]);
+        assert_eq!(belirtecle("shari\u{2bf}a"), vec!["sharia"]);
+        assert_eq!(belirtecle("\u{2be}ibn"), vec!["ibn"]);
+        assert_eq!(
+            belirtecle("ma\u{2bc}mun \u{2bb}umar"),
+            vec!["mamun", "umar"]
+        );
+        // Kitâbü'l-ʿİber: ASCII kesme ayraç kalır, ʿ silinir, İ → i.
+        assert_eq!(
+            belirtecle("Kit\u{e2}b\u{fc}'l-\u{2bf}\u{130}ber"),
+            vec!["kitabu", "l", "iber"]
+        );
+        // Aranan ve kayıt aynı biçime düşer: yazılıştan bağımsız bulunur.
+        assert_eq!(katla("\u{2bf}Asabiyya"), katla("asabiyya"));
+        assert_eq!(katla("\u{2bf}Asabiyya"), katla("\u{2be}asabiyya"));
+    }
+
+    #[test]
+    fn yakin_degistirici_harfler_ve_sinir() {
+        for kod in 0x2b9u32..=0x2bf {
+            let c = char::from_u32(kod).unwrap();
+            assert_eq!(katla(&format!("a{c}b")), "ab", "U+{kod:04X}");
+        }
+        // Sınır dışı komşular dokunulmaz: U+02B8 (ʸ, harf) ve U+02C8 (vurgu çizgisi).
+        assert_eq!(katla("a\u{2b8}b"), "a\u{2b8}b");
+        assert_eq!(katla("a\u{2c8}b"), "a\u{2c8}b");
+        // Tipografik kesme ayraç kalır (mevcut davranış).
+        assert_eq!(belirtecle("kitab\u{2019}ul"), vec!["kitab", "ul"]);
+        // Yalnız ʿ olan metin boş belirteç listesi verir, hata vermez.
+        assert!(belirtecle("\u{2bf}").is_empty());
+        // Silme yalnız katlamadadır; görüntüleme işlevleri ʿ'yi korur.
+        assert_eq!(kucult("\u{2bf}Asabiyya"), "\u{2bf}asabiyya");
+        assert_eq!(tr_kucuk("\u{2bf}Asabiyya"), "\u{2bf}asabiyya");
+        assert_eq!(katla("\u{2bf}Asabiyya"), katla(&kucult("\u{2bf}Asabiyya")));
+        assert_eq!(KATLAMA_SURUMU, 2);
     }
 
     #[test]
